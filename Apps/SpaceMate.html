@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Use correct character set. -->
+  <meta charset="utf-8">
+  <!-- Tell IE to use the latest, best version. -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <!-- Make the application on mobile take up the full browser screen and disable user scaling. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
+  <title>Space Mate!</title>
+  <script src="../Build/Cesium/Cesium.js"></script>
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+  <style>
+      @import url(../Build/Cesium/Widgets/widgets.css);
+      html, body, #cesiumContainer {
+          width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+      }
+      #loadingContainer {
+        display: none;
+      }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="loadingContainer"></div>
+
+  <script>
+  var dummySattelitesCartesian = [{name: 'sattelite1', x: 0.0, y:0.0, z:800000.0, altitude:2000000.0, bottomRadius:400000.0},
+    {name: 'sattelite2', x: -125.0, y:0.0, z:800000.0, altitude:2000000.0, bottomRadius:400000.0}
+  ];
+
+  var dummySattelitesActual = [{name: 'AQUA', lat: this.convertDegreesToRadians(-34.40), long: this.convertDegreesToRadians(171), altitude:2000000.0, bottomRadius:850000.0},
+    {name: 'CLOUDSAT', lat: this.convertDegreesToRadians(-40.55), long:this.convertDegreesToRadians(164.45), altitude:2000000.0, bottomRadius:400000.0}
+  ];
+
+  var satteliteDataStoreActual = [];
+  var satteliteDataStoreCartesian = [];
+
+  function getLiveSatteliteData(viewer, shouldFetch) {
+    if (!shouldFetch) {
+      this.satteliteDataStoreActual = dummySattelitesActual;
+      overlaySattelites(viewer, this.satteliteDataStoreActual);
+    }
+    const DATA_ENDPOINT = 'http://localhost:8080/data/sattelite-data.json';
+    const PI_VALUE = 3.14159;
+    $.getJSON(DATA_ENDPOINT, function(response) {
+      var satteliteDataStoreActualTemp = [];
+
+      //massage the data
+      for (key in response) {
+        satteliteItem = response[key];
+        satteliteDataStoreActualTemp.push({
+          name: satteliteItem.name.toUpperCase(),
+          lat: (satteliteItem.lat * PI_VALUE) / 180,
+          long: (satteliteItem.lon * PI_VALUE) / 180,
+          altitude: satteliteItem.alt,
+          bottomRadius: satteliteItem.swathe
+        });
+      }
+
+      this.satteliteDataStoreActual = satteliteDataStoreActualTemp;
+    }).done(function () {
+      overlaySattelites(viewer, this.satteliteDataStoreActual);
+    });
+  }
+
+  function renderWorldMap() {
+    var viewer = new Cesium.Viewer('cesiumContainer', {
+      imageryProvider : new Cesium.ArcGisMapServerImageryProvider({
+          url : 'http://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer'
+      }),
+      baseLayerPicker : false,
+      homeButton: false,
+      navigationHelpButton: false,
+      toggleButton: false,
+      fullscreenButton: false,
+      VRButton: false
+    });
+
+    return viewer;
+  }
+
+  function overlaySattelites(viewer, sattelitesList) {
+    sattelitesList.forEach(function(satteliteData) {
+      //plot sattelite
+      if (satteliteData.lat) {
+        this.plotSatteliteActual(
+          satteliteData.name, satteliteData.lat, satteliteData.long, satteliteData.altitude,
+          satteliteData.bottomRadius
+        );
+      } else {
+          this.plotSatteliteCartesian(
+            satteliteData.name, satteliteData.x, satteliteData.y, satteliteData.z,
+            satteliteData.altitude, satteliteData.bottomRadius);
+      }
+    });
+    return viewer;
+  }
+
+  function plotSatteliteCartesian(satteliteKey, x, y, z, altitude, bottomRadius) {
+    var sattelite = viewer.entities.add({
+      name : satteliteKey,
+      position: Cesium.Cartesian3.fromDegrees(x, y, z),
+      cylinder : {
+          length : altitude,
+          topRadius : 0.0,
+          bottomRadius : 400000.0,
+          material : Cesium.Color.YELLOW.withAlpha(0.4),
+      }
+    });
+
+    return sattelite;
+  }
+
+  function plotSatteliteActual(satteliteKey, lat, long, altitude, bottomRadius) {
+    //overlay sattelite image
+    var scene = viewer.scene;
+    var modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(
+      Cesium.Cartesian3.fromRadians(lat, long, altitude)
+    );
+    var model = scene.primitives.add(Cesium.Model.fromGltf({
+      url : '../../Apps/SampleData/models/CesiumGround/Cesium_Ground.gltf',
+      modelMatrix : modelMatrix,
+      scale : 200.0
+    }));
+
+    var sattelite = viewer.entities.add({
+      name : satteliteKey,
+      position: Cesium.Cartesian3.fromRadians(lat, long, altitude),
+      cylinder : {
+        length : altitude + 6371000,
+        topRadius : 0.0,
+        bottomRadius : bottomRadius,
+        material : Cesium.Color.YELLOW.withAlpha(0.3),
+      },
+      label : {
+        text : satteliteKey,
+        font : '14px Helvetica',
+        backgroundColor: Cesium.Color.RED,
+        outlineColor: Cesium.Color.RED,
+    }
+    });
+
+    return sattelite;
+  }
+
+  function convertDegreesToRadians(degrees) {
+    return (degrees * 3.14159) / 180;
+  }
+
+  var viewer = this.renderWorldMap();
+  this.getLiveSatteliteData(viewer, true);
+
+  setInterval(function() {
+    var viewer = this.renderWorldMap();
+    this.getLiveSatteliteData(viewer, true);
+  }, 2000);
+
+  </script>
+</body>
+</html>
